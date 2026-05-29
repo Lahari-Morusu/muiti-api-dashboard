@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ---------------- OPENROUTER API ----------------
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 def ask_ai(question):
 
@@ -14,27 +14,29 @@ def ask_ai(question):
     }
 
     data = {
+        # ✅ FIX: use a valid OpenRouter model
         "model": "openai/gpt-3.5-turbo",
         "messages": [
-            {
-                "role": "user",
-                "content": question
-            }
+            {"role": "user", "content": question}
         ]
     }
 
-    response = requests.post(url, headers=headers, json=data)
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=30)
 
-    result = response.json()
+        result = response.json()
 
-    # DEBUG OUTPUT
-    st.write(result)
+        # 🔴 DEBUG HELP (IMPORTANT)
+        if response.status_code != 200:
+            return f"API Error {response.status_code}: {result}"
 
-    # SAFE CHECK
-    if "choices" in result:
-        return result["choices"][0]["message"]["content"]
-    else:
-        return "API Error"
+        if "choices" in result:
+            return result["choices"][0]["message"]["content"]
+
+        return f"Unexpected response: {result}"
+
+    except Exception as e:
+        return f"Request Error: {e}"
 
 
 # ---------------- WEATHER API ----------------
@@ -42,14 +44,19 @@ def get_weather():
 
     weather_url = "https://api.open-meteo.com/v1/forecast?latitude=17.3850&longitude=78.4867&current_weather=true"
 
-    response = requests.get(weather_url)
+    try:
+        response = requests.get(weather_url, timeout=10)
+        data = response.json()
 
-    data = response.json()
+        weather = data.get("current_weather", {})
 
-    temp = data["current_weather"]["temperature"]
-    wind = data["current_weather"]["windspeed"]
+        temp = weather.get("temperature", "N/A")
+        wind = weather.get("windspeed", "N/A")
 
-    return f"Temperature: {temp}°C | Wind Speed: {wind} km/h"
+        return f"Temperature: {temp}°C | Wind Speed: {wind} km/h"
+
+    except Exception as e:
+        return f"Weather Error: {e}"
 
 
 # ---------------- NEWS API ----------------
@@ -59,57 +66,63 @@ def get_news():
 
     news_url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={NEWS_API_KEY}"
 
-    response = requests.get(news_url)
+    try:
+        response = requests.get(news_url, timeout=10)
+        data = response.json()
 
-    data = response.json()
+        if response.status_code != 200:
+            return [f"News API Error: {data}"]
 
-    articles = data["articles"][:5]
+        articles = data.get("articles", [])
 
-    news_list = []
+        if not articles:
+            return ["No news found"]
 
-    for article in articles:
-        news_list.append(article["title"])
+        return [article.get("title", "No Title") for article in articles[:5]]
 
-    return news_list
+    except Exception as e:
+        return [f"News Error: {e}"]
 
 
 # ---------------- STREAMLIT UI ----------------
+st.set_page_config(page_title="Multi API AI Chatbot")
 
-st.title("Multi API AI Chatbot")
+st.title("🤖 Multi API AI Chatbot")
+st.write("Choose a feature below")
 
-option = st.selectbox(
-    "Choose Feature",
-    [
-        "AI Chat",
-        "Weather",
-        "Latest News"
-    ]
-)
+option = st.selectbox("Choose Feature", ["AI Chat", "Weather", "Latest News"])
+
 
 # ---------- AI CHAT ----------
 if option == "AI Chat":
 
-    user_question = st.text_input("Ask AI")
+    st.subheader("Ask AI")
+
+    user_question = st.text_input("Enter your question")
 
     if st.button("Send"):
 
-        answer = ask_ai(user_question)
+        if not user_question.strip():
+            st.warning("Please enter a question")
 
-        st.success(answer)
+        else:
+            answer = ask_ai(user_question)
+            st.success(answer)
 
 
 # ---------- WEATHER ----------
 elif option == "Weather":
 
+    st.subheader("Current Weather")
+
     if st.button("Get Weather"):
-
-        weather = get_weather()
-
-        st.success(weather)
+        st.success(get_weather())
 
 
 # ---------- NEWS ----------
 elif option == "Latest News":
+
+    st.subheader("Top Headlines")
 
     if st.button("Get News"):
 
@@ -117,4 +130,3 @@ elif option == "Latest News":
 
         for item in news:
             st.write("•", item)
-            
